@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+    
+    <file:connector name="EBTFile" writeToDirectory="${ebt.writeDirectory}" autoDelete="true" outputAppend="true" streaming="true" validateConnections="true" doc:name="File"/>
+    
+    <flow name="sfsl_benefits_batchFlow">
+        <file:inbound-endpoint path="/Users/awentzell/Documents/temp/flat-schema" moveToDirectory="/Users/awentzell/Documents/temp/flat-schema/archive" pollingFrequency="60000" responseTimeout="10000" doc:name="File"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:input-payload/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/json
+---
+payload splitBy "\n" map
+{
+	object: ({
+		type: "header",
+		fileId: $[0..10] as :number,
+		agencyId: $[11..16],
+		maintenanceType: $[17..32],
+		fileCreateDate: $[33..40] as :number,
+		fileCreateTime: $[41..44] as :number,
+		totalDetailRecords: $[45..53] as :number,
+		numberOfAdds: $[54..62] as :number,
+		numberOfCancels: $[63..71] as :number,
+		amountOfAdds: $[72..80] as :number
+	}) when ($ [17..24]) == 'FS-DAILY' 
+	otherwise
+	({
+		type: "detail",
+		fileId: $[0..10] as :number,
+		refreshAction: $[11..11],
+		caseNumber: $[12..21],
+		benefitType: $[22..29],
+		documentNumber: $[30..41],
+		authorizationAmount: $[42..50] as :number,
+		benefitAvailableDate: $[51..58] as :number,
+		benefitAvailableTime: $[59..62] as :number,
+		financialCountyCode: $[63..64],
+		benefitMonth: $[65..66],
+		benefitYear: $[67..70],
+		processStatusFlag: $[71..71]
+	})
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <json:json-to-object-transformer returnClass="java.util.List" doc:name="JSON to Object"/>
+        <logger message="#[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+        <batch:execute name="sfsl_benefits_batchBatch" doc:name="sfsl_benefits_batchBatch"/>
+    </flow>
+    <batch:job name="sfsl_benefits_batchBatch">
+        <batch:input>
+            <set-variable variableName="maintenanceType" value="#[[&quot;FS-DAILY&quot;: &quot;MTFSBEUP&quot;,&quot;CASH-DAILY&quot;: &quot;MTCSBEUP&quot;]]" doc:name="Variable MaintenanceType"/>
+            <set-variable variableName="refereshAction" value="#[[&quot;A&quot; : &quot;01&quot;, &quot;Z&quot; : &quot;00&quot;]]" doc:name="Variable RefreshAction"/>
+        </batch:input>
+        <batch:process-records>
+            <batch:step name="BS_Lookup">
+                <logger message="#[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+            </batch:step>
+            <batch:step name="Batch_create_EBT_Header" accept-expression="#[payload.object.type == 'header']">
+                <dw:transform-message doc:name="create EBT Header Record">
+                    <dw:input-payload/>
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output text/plain schemaPath = "EBTBenefitHeaderRecord.ffd"
+---
+payload map ({
+	Record_type: 'HD',
+	TransactionType: flowVars.maintenanceType[trim payload.object.maintenanceType],
+	ControlNumber: payload.object.fileId,
+	CreateDate: payload.object.fileCreateDate,
+	CreateTime: payload.object.fileCreateTime,
+	filler1: ' ',
+	StateCode: 'MT',
+	ResponseCode: '0000',
+	cc: "\r\n"
+})]]></dw:set-payload>
+                </dw:transform-message>
+                <object-to-string-transformer doc:name="Object to String"/>
+                <file:outbound-endpoint path="${ebt.writeDirectory}" outputPattern="ebt-benefits.dat" connector-ref="EBTFile" responseTimeout="10000" doc:name="File"/>
+            </batch:step>
+            <batch:step name="Batch_create_EBT_details" accept-expression="#[payload.object.type == 'detail']" accept-policy="ALL">
+                <dw:transform-message doc:name="create EBT Detail Record">
+                    <dw:input-payload/>
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output text/plain schemaPath = "EBTBenefitDetailRecord.ffd"
+---
+payload map ({
+	Record_Type: 'DT',
+	ActionCode: flowVars.refereshAction.A,
+	StateID: payload.object.caseNumber,
+	BenefitType: payload.object.benefitType,
+	AuthorizationNumber: payload.object.documentNumber,
+	DebitCreditIndicator: 'CR',
+	Amount: payload.object.authorizationAmount,
+	BenefitAvailDate: payload.object.benefitAvailableDate,
+	BenefitPeriodDate: payload.object.benefitYear ++ payload.object.benefitMonth,
+	OfficeCode: payload.object.financialCountyCode,
+	Filler: ' ',
+	ResponseCode: '0000',
+	cc: "\r\n"
+})]]></dw:set-payload>
+                </dw:transform-message>
+                <object-to-string-transformer doc:name="Object to String"/>
+                <file:outbound-endpoint path="${ebt.writeDirectory}" outputPattern="ebt-benefits.dat" connector-ref="EBTFile" responseTimeout="10000" doc:name="File"/>
+            </batch:step>
+            <batch:step name="Batch_create_Trailer_details" accept-expression="#[payload.object.type == 'header']">
+                <dw:transform-message doc:name="Transform Message">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output text/plain schemaPath = "EBTBenefitTrailerRecord.ffd"
+---
+payload map ({
+	Record_type: 'HD',
+	TransactionType: flowVars.maintenanceType[trim payload.object.maintenanceType],
+	ControlNumber: payload.object.fileId,
+	CreateDate: payload.object.fileCreateDate,
+	CreateTime: payload.object.fileCreateTime,
+	filler1: ' ',
+	TotalDetailRecords: payload.object.totalDetailRecords,
+	CreditCount: payload.object.numberOfAdds,
+	DebitCount: 0,
+	CreditAmount: payload.object.amountOfAdds,
+	DebitAmount: 0,
+	filler: ' ',
+	ResponseCode: '0000',
+	cc: "\r\n"
+
+})
+]]></dw:set-payload>
+                </dw:transform-message>
+                <object-to-string-transformer doc:name="Object to String"/>
+                <file:outbound-endpoint path="${ebt.writeDirectory}" outputPattern="ebt-benefits.dat" connector-ref="EBTFile" responseTimeout="10000" doc:name="File"/>
+            </batch:step>
+        </batch:process-records>
+        <batch:on-complete>
+            <logger message="fin de batch: #[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+        </batch:on-complete>
+    </batch:job>
+</mule>

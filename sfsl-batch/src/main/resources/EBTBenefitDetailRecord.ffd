@@ -1,0 +1,16 @@
+form: FIXEDWIDTH
+name: 'EBTBenefitDetailRecord'
+values: 
+- { name: 'Record_Type', type: String, length: 2 }
+- { name: 'ActionCode', type: String, length: 2 }
+- { name: 'StateID', type: String, length: 15 }
+- { name: 'BenefitType', type: String, length: 8 }
+- { name: 'AuthorizationNumber', type: String, length: 20 }
+- { name: 'DebitCreditIndicator', type: String, length: 2 }
+- { name: 'Amount', type: Integer, length: 7 }
+- { name: 'BenefitAvailDate', type: Integer, length: 8 }
+- { name: 'BenefitPeriodDate', type: String, length: 6 }
+- { name: 'OfficeCode', type: String, length: 5 }
+- { name: 'Filler', type: String, length: 21 }
+- { name: 'ResponseCode', type: String, length: 4 }
+- { name: 'cc', type: String, length: 2 }

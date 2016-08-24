@@ -1,0 +1,13 @@
+form: FIXEDWIDTH
+name: 'EBTBenefitHeaderRecord'
+values: 
+- { name: 'Record_type', usage: M, type: String, length: 2 }
+- { name: 'TransactionType', usage: M, type: String, length: 8, format: { justify: RIGHT } }
+- { name: 'ControlNumber', usage: M, type: Integer, length: 6, format: { justify: ZEROES } }
+- { name: 'CreateDate', usage: M, type: Integer, length: 8 }
+- { name: 'CreateTime', usage: M, type: Integer, length: 6 }
+- { name: 'filler1', usage: M, type: String, length: 11 }
+- { name: 'StateCode', usage: M, type: String, length: 2 }
+- { name: 'filler', usage: M, type: String, length: 53 }
+- { name: 'ResponseCode', usage: M, type: String, length: 4 }
+- { name: 'cc', usage: M, type: String, length: 2 }

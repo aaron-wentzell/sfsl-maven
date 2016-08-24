@@ -1,0 +1,17 @@
+form: FIXEDWIDTH
+name: 'EBTBenefitTrailerRecord'
+values: 
+- { name: 'Record_type', usage: M, type: String, length: 2 }
+- { name: 'TransactionType', usage: M, type: String, length: 8 }
+- { name: 'ControlNumber', usage: M, type: Integer, length: 6, format: { justify: ZEROES } }
+- { name: 'CreateDate', usage: M, type: Integer, length: 8 }
+- { name: 'CreateTime', usage: M, type: Integer, length: 6 }
+- { name: 'filler1', usage: M, type: String, length: 2 }
+- { name: 'TotalDetailRecords', usage: M, type: Integer, length: 9, format: { justify: ZEROES } }
+- { name: 'CreditCount', usage: M, type: Integer, length: 7, format: { justify: ZEROES } }
+- { name: 'DebitCount', usage: M, type: Integer, length: 7, format: { justify: ZEROES } }
+- { name: 'CreditAmount', usage: M, type: Integer, length: 11, format: { justify: ZEROES } }
+- { name: 'DebitAmount', usage: M, type: Integer, length: 11, format: { justify: ZEROES } }
+- { name: 'filler', usage: M, type: String, length: 19 }
+- { name: 'ResponseCode', usage: M, type: String, length: 4 }
+- { name: 'cc', usage: M, type: String, length: 2 }
