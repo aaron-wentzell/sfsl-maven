@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+<mule xmlns:ftp="http://www.mulesoft.org/schema/mule/ee/ftp" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
 	xmlns:spring="http://www.springframework.org/schema/beans" 
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
@@ -9,12 +9,15 @@ http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/jso
 http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
 http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
 http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
-http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/ee/ftp http://www.mulesoft.org/schema/mule/ee/ftp/current/mule-ftp-ee.xsd">
     
     <file:connector name="EBTFile" writeToDirectory="${ebt.writeDirectory}" autoDelete="true" outputAppend="true" streaming="true" validateConnections="true" doc:name="File"/>
+    <vm:connector name="VM" validateConnections="true" doc:name="VM"/>
     
     <flow name="sfsl_benefits_batchFlow">
-        <file:inbound-endpoint path="/Users/awentzell/Documents/temp/flat-schema" moveToDirectory="/Users/awentzell/Documents/temp/flat-schema/archive" pollingFrequency="60000" responseTimeout="10000" doc:name="File"/>
+        <file:inbound-endpoint path="/Users/awentzell/Documents/temp/flat-schema" moveToDirectory="/Users/awentzell/Documents/temp/flat-schema/archive" pollingFrequency="120000" responseTimeout="10000" doc:name="File"/>
         <dw:transform-message doc:name="Transform Message">
             <dw:input-payload/>
             <dw:set-payload><![CDATA[%dw 1.0
@@ -56,16 +59,14 @@ payload splitBy "\n" map
         <logger message="#[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
         <batch:execute name="sfsl_benefits_batchBatch" doc:name="sfsl_benefits_batchBatch"/>
     </flow>
-    <batch:job name="sfsl_benefits_batchBatch">
+    <batch:job name="sfsl_benefits_batchBatch" max-failed-records="100">
         <batch:input>
             <set-variable variableName="maintenanceType" value="#[[&quot;FS-DAILY&quot;: &quot;MTFSBEUP&quot;,&quot;CASH-DAILY&quot;: &quot;MTCSBEUP&quot;]]" doc:name="Variable MaintenanceType"/>
             <set-variable variableName="refereshAction" value="#[[&quot;A&quot; : &quot;01&quot;, &quot;Z&quot; : &quot;00&quot;]]" doc:name="Variable RefreshAction"/>
         </batch:input>
         <batch:process-records>
-            <batch:step name="BS_Lookup">
-                <logger message="#[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
-            </batch:step>
-            <batch:step name="Batch_create_EBT_Header" accept-expression="#[payload.object.type == 'header']">
+            <batch:step name="Batch_create_EBT_Header" accept-expression="#[message.payload.object.type == 'header']">
+                <batch:set-record-variable variableName="originalPayload" value="#[message.payload]" doc:name="Record Variable"/>
                 <dw:transform-message doc:name="create EBT Header Record">
                     <dw:input-payload/>
                     <dw:set-payload><![CDATA[%dw 1.0
@@ -84,9 +85,11 @@ payload map ({
 })]]></dw:set-payload>
                 </dw:transform-message>
                 <object-to-string-transformer doc:name="Object to String"/>
-                <file:outbound-endpoint path="${ebt.writeDirectory}" outputPattern="ebt-benefits.dat" connector-ref="EBTFile" responseTimeout="10000" doc:name="File"/>
+                <batch:set-record-variable variableName="resultString" value="#[message.payload]" doc:name="Record Variable"/>
+                <set-payload value="#[recordVars.originalPayload]" doc:name="Set Payload"/>
             </batch:step>
-            <batch:step name="Batch_create_EBT_details" accept-expression="#[payload.object.type == 'detail']" accept-policy="ALL">
+            <batch:step name="Batch_create_EBT_details" accept-expression="#[message.payload.object.type == 'detail']" accept-policy="ALL">
+                <batch:set-record-variable variableName="originalPayload" value="#[message.payload]" doc:name="Record Variable"/>
                 <dw:transform-message doc:name="create EBT Detail Record">
                     <dw:input-payload/>
                     <dw:set-payload><![CDATA[%dw 1.0
@@ -109,9 +112,11 @@ payload map ({
 })]]></dw:set-payload>
                 </dw:transform-message>
                 <object-to-string-transformer doc:name="Object to String"/>
-                <file:outbound-endpoint path="${ebt.writeDirectory}" outputPattern="ebt-benefits.dat" connector-ref="EBTFile" responseTimeout="10000" doc:name="File"/>
+                <batch:set-record-variable variableName="resultString" value="#[message.payload]" doc:name="Record Variable"/>
+                <set-payload value="#[recordVars.originalPayload]" doc:name="Copy_of_Set Payload"/>
             </batch:step>
-            <batch:step name="Batch_create_Trailer_details" accept-expression="#[payload.object.type == 'header']">
+            <batch:step name="Batch_create_Trailer_details" accept-expression="#[message.payload.object.type == 'header']">
+                <batch:set-record-variable variableName="originalPayload" value="#[message.payload]" doc:name="Copy_of_Record Variable"/>
                 <dw:transform-message doc:name="Transform Message">
                     <dw:set-payload><![CDATA[%dw 1.0
 %output text/plain schemaPath = "EBTBenefitTrailerRecord.ffd"
@@ -136,11 +141,21 @@ payload map ({
 ]]></dw:set-payload>
                 </dw:transform-message>
                 <object-to-string-transformer doc:name="Object to String"/>
-                <file:outbound-endpoint path="${ebt.writeDirectory}" outputPattern="ebt-benefits.dat" connector-ref="EBTFile" responseTimeout="10000" doc:name="File"/>
+                <batch:set-record-variable variableName="resultString" value="#[message.payload]" doc:name="Record Variable"/>
+                <set-payload value="#[recordVars.originalPayload]" doc:name="Copy_of_Set Payload"/>
+            </batch:step>
+            <batch:step name="Batch_Step">
+                <logger message="#[recordVars.resultString]" level="INFO" doc:name="Logger"/>
             </batch:step>
         </batch:process-records>
         <batch:on-complete>
             <logger message="fin de batch: #[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Logger"/>
+            <vm:outbound-endpoint exchange-pattern="one-way" path="sendToFTP" connector-ref="VM" doc:name="VM"/>
         </batch:on-complete>
     </batch:job>
+    <flow name="send_to_SFTP">
+        <vm:inbound-endpoint exchange-pattern="one-way" path="sendToFTP" connector-ref="VM" doc:name="VM"/>
+        <logger message="fin de batch: #[message.payloadAs(java.lang.String)]" level="INFO" doc:name="Copy_of_Logger"/>
+        <ftp:outbound-endpoint host="localhost" port="21" responseTimeout="10000" doc:name="FTP"/>
+    </flow>
 </mule>
